@@ -9,12 +9,10 @@ import cc.moecraft.logger.HyLogger;
 import cc.moecraft.logger.format.AnsiColor;
 import lombok.Data;
 
-import java.io.DataInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 
 /**
@@ -26,8 +24,7 @@ import java.util.ArrayList;
  * @author Hykilpikonna
  */
 @Data
-public class HttpServer
-{
+public class HttpServer {
     private final int port;
     private final HyLogger logger;
     private final PicqBotX bot;
@@ -35,8 +32,7 @@ public class HttpServer
     private boolean started = true;
     private boolean paused = false;
 
-    public HttpServer(int port, PicqBotX bot)
-    {
+    public HttpServer(int port, PicqBotX bot) {
         this.bot = bot;
         this.port = port;
         this.logger = bot.getLogger();
@@ -44,38 +40,33 @@ public class HttpServer
 
     /**
      * 处理请求
+     *
      * @param data JSON
      */
-    private void process(String data)
-    {
+    private void process(String data) {
         bot.getEventManager().call(data);
     }
 
     /**
      * 启动HTTP服务器
+     *
      * @throws HttpServerStartFailedException 启动失败
      */
-    public void start() throws HttpServerStartFailedException
-    {
+    public void start() throws HttpServerStartFailedException {
         ServerSocket serverSocket;
-        try
-        {
+        try {
             serverSocket = new ServerSocket(this.port);
             logger.log(AnsiColor.GREEN + "启动成功! 开始接收消息...");
-        }
-        catch (IOException e)
-        {
+        } catch (IOException e) {
             throw new HttpServerStartFailedException(logger, e);
         }
 
         Socket socket = null;
         OutputStream out = null;
 
-        while (started)
-        {
+        while (started) {
             if (paused) continue;
-            try
-            {
+            try {
                 // 关闭上次的Socket, 这样就能直接continue了
                 if (out != null) out.close();
                 if (socket != null && !socket.isClosed()) socket.close();
@@ -85,12 +76,11 @@ public class HttpServer
 
                 // 读取请求字符
                 InputStream inputStream = socket.getInputStream();
-                DataInputStream reader = new DataInputStream(inputStream);
+                BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, Charset.forName("UTF-8")));
                 out = socket.getOutputStream();
 
                 String line = reader.readLine();
-                if (line == null || line.isEmpty())
-                {
+                if (line == null || line.isEmpty()) {
                     bot.getEventManager().call(new EventLocalHttpFailEvent(EventLocalHttpFailEvent.FailType.requestIsEmpty));
                     continue;
                 }
@@ -101,8 +91,7 @@ public class HttpServer
                 String requestUrl = info[1];
                 String httpVersion = info[2];
 
-                if (!method.equalsIgnoreCase("post"))
-                {
+                if (!method.equalsIgnoreCase("post")) {
                     bot.getEventManager().call(new EventLocalHttpFailEvent(EventLocalHttpFailEvent.FailType.incorrectRequestMethod));
                     continue;
                 }
@@ -114,10 +103,8 @@ public class HttpServer
                 String userAgent = "UNINITIALIZED";
                 int contentLength = -1;
 
-                for (String oneInfo : otherInfo)
-                {
-                    if (oneInfo.contains("Content-Type: "))
-                    {
+                for (String oneInfo : otherInfo) {
+                    if (oneInfo.contains("Content-Type: ")) {
                         oneInfo = oneInfo.replace("Content-Type: ", "");
                         if (!oneInfo.contains("application/json")) continue;
                         if (!oneInfo.contains("charset=UTF-8")) continue;
@@ -125,24 +112,21 @@ public class HttpServer
                         String[] split = oneInfo.split("; ");
                         contentType = split[0];
                         charset = split[1];
-                    }
-                    else if (oneInfo.contains("User-Agent: ")) userAgent = oneInfo.replace("User-Agent: ", "");
-                    else if (oneInfo.contains("Content-Length: ")) contentLength = Integer.parseInt(oneInfo.replace("Content-Length: ", ""));
+                    } else if (oneInfo.contains("User-Agent: ")) userAgent = oneInfo.replace("User-Agent: ", "");
+                    else if (oneInfo.contains("Content-Length: "))
+                        contentLength = Integer.parseInt(oneInfo.replace("Content-Length: ", ""));
                 }
 
                 // 验证信息
-                if (contentType.equals("UNINITIALIZED") || !contentType.equals("application/json"))
-                {
+                if (contentType.equals("UNINITIALIZED") || !contentType.equals("application/json")) {
                     bot.getEventManager().call(new EventLocalHttpFailEvent(EventLocalHttpFailEvent.FailType.incorrectApplicationType));
                     continue;
                 }
-                if (charset.equals("UNINITIALIZED") || !charset.equals("charset=UTF-8"))
-                {
+                if (charset.equals("UNINITIALIZED") || !charset.equals("charset=UTF-8")) {
                     bot.getEventManager().call(new EventLocalHttpFailEvent(EventLocalHttpFailEvent.FailType.incorrectCharset));
                     continue;
                 }
-                if (userAgent.equals("UNINITIALIZED") || !userAgent.matches(bot.getHttpApiVersionDetection()))
-                {
+                if (userAgent.equals("UNINITIALIZED") || !userAgent.matches(bot.getHttpApiVersionDetection())) {
                     // 版本不正确
                     logger.error("HTTP API请求版本不正确, 设置的兼容版本为: " + bot.getHttpApiVersionDetection());
                     logger.error("当前版本为: " + userAgent);
@@ -157,16 +141,14 @@ public class HttpServer
                 byte[] buffer;
                 int size = 0;
 
-                if (contentLength != 0)
-                {
+                if (contentLength != 0) {
                     buffer = new byte[contentLength];
-                    while(size < contentLength) buffer[size++] = (byte) reader.read();
+                    while (size < contentLength) buffer[size++] = (byte) reader.read();
                     data = new String(buffer, 0, size);
                 }
 
                 // 输出Debug消息
-                if (bot.isDebug())
-                {
+                if (bot.isDebug()) {
                     logger.debug("收到新请求: " + line);
                     //logger.debug("- 请求方法: " + method);
                     //logger.debug("- 请求URL : " + requestUrl);
@@ -180,26 +162,19 @@ public class HttpServer
                 bot.getEventManager().call(event);
 
                 if (!event.isCancelled()) process(data);
-            }
-            catch (Throwable e)
-            {
+            } catch (Throwable e) {
                 logger.error("请求接收失败: ");
                 logger.error("变量: " + ExceptionUtils.getAllVariables(e));
                 ThreadUtils.safeSleep(2);
                 e.printStackTrace();
                 bot.getEventManager().call(new EventLocalHttpFailEvent(EventLocalHttpFailEvent.FailType.unknown));
-            }
-            finally
-            {
-                try
-                {
+            } finally {
+                try {
                     sendResponseAndClose(out, "[]");
 
                     // 关闭接收
                     socket.close();
-                }
-                catch (Exception e)
-                {
+                } catch (Exception e) {
                     logger.error("关闭接收失败: ");
                     e.printStackTrace();
                     bot.getEventManager().call(new EventLocalHttpFailEvent(EventLocalHttpFailEvent.FailType.socketCloseFailed));
@@ -210,24 +185,20 @@ public class HttpServer
 
     /**
      * 读取所有行
+     *
      * @param reader 读取器
      * @return 所有行的列表
      */
-    public static ArrayList<String> readOtherInfo(DataInputStream reader)
-    {
+    public static ArrayList<String> readOtherInfo(BufferedReader reader) {
         ArrayList<String> result = new ArrayList<>();
 
-        while (true)
-        {
-            try
-            {
+        while (true) {
+            try {
                 String line = reader.readLine();
                 if (line.isEmpty()) break;
 
                 result.add(line);
-            }
-            catch (IOException e)
-            {
+            } catch (IOException e) {
                 e.printStackTrace();
                 break;
             }
@@ -238,26 +209,23 @@ public class HttpServer
 
     /**
      * 回复JSON
-     * @param out 输出流
+     *
+     * @param out        输出流
      * @param jsonString JSON字符串
      */
-    public void sendResponseAndClose(OutputStream out, String jsonString)
-    {
+    public void sendResponseAndClose(OutputStream out, String jsonString) {
         String response = "";
         response += "HTTP/1.1 204 OK\n";
         response += "Content-Type: application/json; charset=UTF-8\n";
         response += "\n";
 
-        try
-        {
+        try {
             out.write(response.getBytes());
             // out.write(jsonString.getBytes());
             out.flush();
 
             out.close();
-        }
-        catch (IOException e)
-        {
+        } catch (IOException e) {
             logger.debug("消息发送失败: " + e.toString());
         }
     }
