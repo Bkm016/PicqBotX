@@ -7,12 +7,14 @@ import cc.moecraft.icq.utils.ExceptionUtils;
 import cc.moecraft.icq.utils.ThreadUtils;
 import cc.moecraft.logger.HyLogger;
 import cc.moecraft.logger.format.AnsiColor;
+import cn.hutool.core.util.CharsetUtil;
 import lombok.Data;
 
-import java.io.*;
+import java.io.DataInputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.nio.charset.Charset;
 import java.util.ArrayList;
 
 /**
@@ -25,6 +27,7 @@ import java.util.ArrayList;
  */
 @Data
 public class HttpServer {
+
     private final int port;
     private final HyLogger logger;
     private final PicqBotX bot;
@@ -65,18 +68,23 @@ public class HttpServer {
         OutputStream out = null;
 
         while (started) {
-            if (paused) continue;
+            if (paused) {
+                continue;
+            }
             try {
                 // 关闭上次的Socket, 这样就能直接continue了
-                if (out != null) out.close();
-                if (socket != null && !socket.isClosed()) socket.close();
+                if (out != null) {
+                    out.close();
+                }
+                if (socket != null && !socket.isClosed()) {
+                    socket.close();
+                }
 
                 // 获取新的请求
                 socket = serverSocket.accept();
 
                 // 读取请求字符
-                InputStream inputStream = socket.getInputStream();
-                BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, Charset.forName("UTF-8")));
+                DataInputStream reader = new DataInputStream(socket.getInputStream());
                 out = socket.getOutputStream();
 
                 String line = reader.readLine();
@@ -106,15 +114,21 @@ public class HttpServer {
                 for (String oneInfo : otherInfo) {
                     if (oneInfo.contains("Content-Type: ")) {
                         oneInfo = oneInfo.replace("Content-Type: ", "");
-                        if (!oneInfo.contains("application/json")) continue;
-                        if (!oneInfo.contains("charset=UTF-8")) continue;
+                        if (!oneInfo.contains("application/json")) {
+                            continue;
+                        }
+                        if (!oneInfo.contains("charset=UTF-8")) {
+                            continue;
+                        }
 
                         String[] split = oneInfo.split("; ");
                         contentType = split[0];
                         charset = split[1];
-                    } else if (oneInfo.contains("User-Agent: ")) userAgent = oneInfo.replace("User-Agent: ", "");
-                    else if (oneInfo.contains("Content-Length: "))
+                    } else if (oneInfo.contains("User-Agent: ")) {
+                        userAgent = oneInfo.replace("User-Agent: ", "");
+                    } else if (oneInfo.contains("Content-Length: ")) {
                         contentLength = Integer.parseInt(oneInfo.replace("Content-Length: ", ""));
+                    }
                 }
 
                 // 验证信息
@@ -143,8 +157,10 @@ public class HttpServer {
 
                 if (contentLength != 0) {
                     buffer = new byte[contentLength];
-                    while (size < contentLength) buffer[size++] = (byte) reader.read();
-                    data = new String(buffer, 0, size);
+                    while (size < contentLength) {
+                        buffer[size++] = (byte) reader.read();
+                    }
+                    data = new String(buffer, 0, size, CharsetUtil.UTF_8);
                 }
 
                 // 输出Debug消息
@@ -161,7 +177,9 @@ public class HttpServer {
 
                 bot.getEventManager().call(event);
 
-                if (!event.isCancelled()) process(data);
+                if (!event.isCancelled()) {
+                    process(data);
+                }
             } catch (Throwable e) {
                 logger.error("请求接收失败: ");
                 logger.error("变量: " + ExceptionUtils.getAllVariables(e));
@@ -189,13 +207,15 @@ public class HttpServer {
      * @param reader 读取器
      * @return 所有行的列表
      */
-    public static ArrayList<String> readOtherInfo(BufferedReader reader) {
+    public static ArrayList<String> readOtherInfo(DataInputStream reader) {
         ArrayList<String> result = new ArrayList<>();
 
         while (true) {
             try {
                 String line = reader.readLine();
-                if (line.isEmpty()) break;
+                if (line.isEmpty()) {
+                    break;
+                }
 
                 result.add(line);
             } catch (IOException e) {
